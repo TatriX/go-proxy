@@ -7,7 +7,7 @@ import (
 )
 
 type Cache struct {
-	sync.RWMutex
+	mu      sync.RWMutex
 	data    map[CacheKey]CacheData
 	timeout time.Duration
 }
@@ -31,19 +31,26 @@ func NewCache(timeout time.Duration) *Cache {
 	}
 }
 
+func (c *Cache) Set(key CacheKey, data CacheData) {
+	data.expires = time.Now().Add(c.timeout)
+	c.mu.Lock()
+	c.data[key] = data
+	c.mu.Unlock()
+}
+
 func (c *Cache) Get(key CacheKey) (data CacheData, ok bool) {
-	c.RLock()
+	c.mu.RLock()
 	data, ok = c.data[key]
+	c.mu.RUnlock()
 	if ok && time.Now().After(data.expires) {
 		ok = false
+		c.Remove(key)
 	}
-	c.RUnlock() // defer is a bit slower then explicit call
 	return
 }
 
-func (c *Cache) Set(key CacheKey, data CacheData) {
-	data.expires = time.Now().Add(c.timeout)
-	c.Lock()
-	c.data[key] = data
-	c.Unlock()
+func (c *Cache) Remove(key CacheKey) {
+	c.mu.Lock()
+	delete(c.data, key)
+	c.mu.Unlock() // defer is a bit slower then explicit call
 }
